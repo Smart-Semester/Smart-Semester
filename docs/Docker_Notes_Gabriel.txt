@@ -1,0 +1,5 @@
+For a FastAPI service running directly on your Mac, the local connection string is database docker:
+    postgresql://postgres:postgrespassword@localhost:5432/smart_semester
+
+If the service runs in another container on the same Compose network, use the Compose service hostname db instead of localhost:
+    postgresql://postgres:postgrespassword@db:5432/smart_semester
