@@ -6,7 +6,8 @@ CREATE TABLE catalog.courses (
     course_name VARCHAR NOT NULL,
     description TEXT,
     prereq_text TEXT,
-    coreq_text TEXT
+    coreq_text TEXT,
+    catalog_year TEXT
 );
 
 CREATE TABLE resources.summaries (

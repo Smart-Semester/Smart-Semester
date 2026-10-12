@@ -1,0 +1,7 @@
+{
+  "courses": [
+    {"number": "CS1428", "title": "FOUNDATIONS OF COMPUTER SCI I"},
+    {"number": "CS2308", "title": "FOUNDATIONS OF COMPUTER SCI II"},
+    {"number": "CS3358", "title": "DATA STRUCTURES AND ALGORITHMS"}
+  ]
+}

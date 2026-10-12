@@ -1,0 +1,28 @@
+{
+  "classes": [
+    {
+      "syllabus": true,
+      "section": "005",
+      "instructors": [
+        {"spi": true, "hplid": "x9028bf7ba7de"}
+      ],
+      "indexnum": 251018765
+    },
+    {
+      "syllabus": true,
+      "section": "001",
+      "instructors": [
+        {"spi": true, "hplid": "xf1653cb5b005"}
+      ],
+      "indexnum": 251010749
+    },
+    {
+      "syllabus": false,
+      "section": "099",
+      "instructors": [
+        {"spi": false, "hplid": "xaaaa11112222"}
+      ],
+      "indexnum": 251099999
+    }
+  ]
+}

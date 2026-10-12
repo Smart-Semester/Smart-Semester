@@ -1,0 +1,8 @@
+{
+  "displayname": "Jane Smith",
+  "netid": "JS123",
+  "title": "Senior Lecturer",
+  "departments": ["CS"],
+  "semesters": [202510, 202530],
+  "vita": {"converted": true}
+}
