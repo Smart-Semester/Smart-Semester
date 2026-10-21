@@ -8,7 +8,7 @@ router = APIRouter()
 
 # TODO: add response_model=<your response model> to the decorator so FastAPI
 #       validates and documents the output shape.
-@router.post("/eligibility-checks")
+@router.post("/eligibility-checks", response_model=ElibilityResponse)
 def create_eligibility_check(eligibility_request: EligibilityRequest):
     # TODO: take the request model as the parameter (FastAPI reads it from the
     #       JSON body automatically because it is a Pydantic model).

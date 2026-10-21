@@ -1,3 +1,13 @@
+from pydantic import BaseModel, Field
+
+class CompletedCourse(BaseModel):
+    code: str
+    grade: str
+
+class EligibilityRequest(BaseModel):
+    planned_codes: List[str]
+    completed_courses: List[CompletedCourse] = Field(default_factory=list) 
+
 # Three groups of models live in schemas.py: 
 #   A. Request:  planned codes (list of str) + completed courses
 #                (each: code, grade). "completed" may be empty/missing,
