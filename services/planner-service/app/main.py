@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routers import eligbility, transcript
+from routers import eligibility, transcript
 
 app = FastAPI()
 
