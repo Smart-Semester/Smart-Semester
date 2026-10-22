@@ -61,12 +61,24 @@ python -m ingest.syllabus.cli --max-semesters 1 -v
 # 1. Make sure Postgres is running
 docker compose up -d db
 
-# 2. Run the migration (only needed once, or on existing databases)
+#2. To connect and run SQL querys via terminal (Optional)
+docker exec -it smart_semester_db psql -U postgres -d smart_semester
+
+#List tables w/
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_type = 'BASE TABLE' 
+  AND table_schema NOT IN ('pg_catalog', 'information_schema');
+
+#Exit w/
+\q
+
+# 3. Run the migration (only needed once, or on existing databases)
 #    Note: If this is a FRESH database volume, the init-db/ scripts
 #    run automatically. For EXISTING volumes, run manually:
 docker exec -i smart_semester_db psql -U postgres -d smart_semester < init-db/02-syllabi.sql
 
-# 3. Run the importer with --apply
+# 4. Run the importer with --apply
 DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \
     python -m ingest.syllabus.cli --apply
 ```
