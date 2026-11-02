@@ -4,40 +4,14 @@ from app.services import evaluator
 from app.clients import catalog
 from typing import List
 
-
 router = APIRouter()
-
-def parseCodesToList(eligbility_request: EligibilityRequest, codes: List):
-        if (currList == None):
-            return
-        elif (currList.kind == "manual"):
-            # do nothing tbh
-            return
-        elif (currList.kind == "all_of"):
-            # check each node
-            for i in eligibility_request.children:
-                parseCodesToList(eligibility_request.children[i], codes)
-        elif (currList.kind == "any_of"):
-            # check each node
-            for i in eligibility_request.children:
-                parseCodesToList(eligibility_request.children[i], codes)
-        elif (currList.kind == "course"):
-            # add to course list
-            codes.append(currList.code.replace(" ", ""))
-
-@router.get("/courses")
-def fetch_courses(codes: List[str])
 
 # TODO: add response_model=<your response model> to the decorator so FastAPI
 #       validates and documents the output shape.
-@router.post("/eligibility-checks", response_model=ElibilityResponse)
+@router.post("/eligibility-checks", response_model=EligibilityResponse)
 def create_eligibility_check(eligibility_request: EligibilityRequest):
-    # TODO: take the request model as the parameter (FastAPI reads it from the
-    #       JSON body automatically because it is a Pydantic model).
-
     # TODO step 2: normalize codes (uppercase, strip spaces).
-    currList = eligbilityRequest.prereqs.children;
-    while True:
+    # eligibilityRequest.prereqs.children
 
     # TODO step 3: fetch planned courses from Catalog in one batch call.
     #   - Codes Catalog doesn't return are "unknown_course" results,
