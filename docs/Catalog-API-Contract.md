@@ -12,7 +12,8 @@ Each course:
   "code": "CS3358",
   "title": "Data Structures and Algorithms",
   "prereqs": <node or null>,
-  "coreqs": <node or null>      // null = no requirements, never an empty node
+  "coreqs": <node or null>,      // null = no requirements, never an empty node
+  "requirements_parsed": true    // false = not yet parsed (treat null as UNKNOWN, not "no requirements")
 }
 ```
 
@@ -22,11 +23,17 @@ The prereqs and coreqs are either a single root node (for a tree) or null. Each 
 - "any_of" has a "children" field which is a list of nodes, at least one node in "children" needs to be satisfied.
 - "manual" is just for anything that doesn't fit neatly into any of the other requirements (consent, standing, etc.)
 
+**Contract rules (decided Nov 2026):**
+- `all_of` and `any_of` nodes MUST have at least one child. An empty `children` list is invalid. Use `null` at the `prereqs`/`coreqs` level to represent no requirements.
+- `requirements_parsed: false` means the catalog parser has not yet processed this course's requirement text. The planner must treat this as "requirements unknown" and show a warning, NOT treat the null prereqs/coreqs as confirmed empty.
+- `requirements_parsed: true` + `null` prereqs/coreqs means the course genuinely has no requirements.
+
 Example:
 ```json
 {
   "code": "CS3358",
   "title": "Data Structures and Algorithms",
+  "requirements_parsed": true,
   "prereqs": {
     "kind": "all_of",
     "children": [

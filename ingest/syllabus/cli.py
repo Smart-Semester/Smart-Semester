@@ -10,6 +10,9 @@ Usage:
 
     # Limit semesters fetched per course (faster for testing)
     python -m ingest.syllabus.cli --max-semesters 2
+
+    # Pass the catalog year for traceability
+    python -m ingest.syllabus.cli --catalog-year 2024-2025
 """
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 
 from .fetcher import HB2504Fetcher
 from .models import SyllabusRecord
@@ -47,11 +51,20 @@ def _run_pipeline(
     max_semesters: int | None,
     probe_syllabi: bool,
     verbose: bool,
+    catalog_year: str | None,
 ) -> int:
     """Run the full ingest pipeline.  Returns exit code."""
     _configure_logging(verbose)
 
     logger.info("Starting syllabus ingest from %s", LISTING_PAGE_URL)
+
+    # Capture a single fetch timestamp for the entire run so every record in
+    # this ingest batch shares the same fetched_at value.  This makes it easy
+    # to identify all rows that came from the same run.
+    run_fetched_at = datetime.now(timezone.utc)
+    if catalog_year:
+        logger.info("Catalog year: %s", catalog_year)
+    logger.info("Fetch timestamp (UTC): %s", run_fetched_at.isoformat())
 
     # ------------------------------------------------------------------
     # Step 1: Fetch course listing
@@ -121,6 +134,8 @@ def _run_pipeline(
                 semester_code=sem_str,
                 classes=classes,
                 instructor_cache=instructor_cache,
+                fetched_at=run_fetched_at,
+                catalog_year=catalog_year,
             )
             all_records.extend(records)
 
@@ -211,6 +226,15 @@ def main() -> None:
         default=False,
         help="Enable debug logging.",
     )
+    parser.add_argument(
+        "--catalog-year",
+        default=None,
+        metavar="YEAR",
+        help=(
+            "Catalog year this ingest run belongs to, e.g. '2024-2025'. "
+            "Stored on every row for traceability and refresh decisions."
+        ),
+    )
     args = parser.parse_args()
 
     database_url = os.environ.get("DATABASE_URL")
@@ -227,6 +251,7 @@ def main() -> None:
         max_semesters=args.max_semesters,
         probe_syllabi=args.probe_syllabi,
         verbose=args.verbose,
+        catalog_year=args.catalog_year,
     )
     sys.exit(exit_code)
 

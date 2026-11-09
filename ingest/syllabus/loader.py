@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS catalog.syllabi (
     syllabus_filename VARCHAR,
     credit_hours    INTEGER,
     index_num       BIGINT NOT NULL,
+    fetched_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    catalog_year    VARCHAR,
+    source_host     VARCHAR NOT NULL DEFAULT 'api.hb2504.txst.edu',
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -43,11 +46,13 @@ INSERT INTO catalog.syllabi (
     course_code, course_name, section, semester, semester_code,
     instructor_name, instructor_plid, source_url, has_syllabus,
     original_format, syllabus_filename, credit_hours, index_num,
+    fetched_at, catalog_year, source_host,
     updated_at
 ) VALUES (
     %(course_code)s, %(course_name)s, %(section)s, %(semester)s, %(semester_code)s,
     %(instructor_name)s, %(instructor_plid)s, %(source_url)s, %(has_syllabus)s,
     %(original_format)s, %(syllabus_filename)s, %(credit_hours)s, %(index_num)s,
+    %(fetched_at)s, %(catalog_year)s, %(source_host)s,
     CURRENT_TIMESTAMP
 )
 ON CONFLICT (source_url) DO UPDATE SET
@@ -63,6 +68,9 @@ ON CONFLICT (source_url) DO UPDATE SET
     syllabus_filename = EXCLUDED.syllabus_filename,
     credit_hours    = EXCLUDED.credit_hours,
     index_num       = EXCLUDED.index_num,
+    fetched_at      = EXCLUDED.fetched_at,
+    catalog_year    = EXCLUDED.catalog_year,
+    source_host     = EXCLUDED.source_host,
     updated_at      = CURRENT_TIMESTAMP;
 """
 

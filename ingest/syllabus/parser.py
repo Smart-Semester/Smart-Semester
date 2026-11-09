@@ -6,6 +6,7 @@ tested entirely offline with saved fixture data.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from .fetcher import semester_to_label
@@ -14,6 +15,7 @@ from .models import SyllabusRecord
 logger = logging.getLogger(__name__)
 
 API_BASE_DEFAULT = "https://api.hb2504.txst.edu/py"
+SOURCE_HOST_DEFAULT = "api.hb2504.txst.edu"
 
 
 def build_syllabus_url(api_base: str, index_num: int) -> str:
@@ -29,6 +31,9 @@ def parse_classes_into_records(
     classes: list[dict[str, Any]],
     instructor_cache: dict[str, str],
     api_base: str = API_BASE_DEFAULT,
+    fetched_at: Optional[datetime] = None,
+    catalog_year: Optional[str] = None,
+    source_host: str = SOURCE_HOST_DEFAULT,
 ) -> list[SyllabusRecord]:
     """Parse the raw 'classes' list for one course+semester into records.
 
@@ -41,7 +46,13 @@ def parse_classes_into_records(
     classes : the 'classes' array from getclassesforcourse.py
     instructor_cache : mapping plid → display name (may be incomplete)
     api_base : API base URL for building syllabus URLs
+    fetched_at : UTC timestamp of the upstream API call; defaults to now
+    catalog_year : academic year, e.g. "2024-2025"; None if not known
+    source_host : hostname of the upstream API, e.g. "api.hb2504.txst.edu"
     """
+    if fetched_at is None:
+        fetched_at = datetime.now(timezone.utc)
+
     semester_label = semester_to_label(semester_code)
     records: list[SyllabusRecord] = []
 
@@ -84,6 +95,9 @@ def parse_classes_into_records(
                 syllabus_filename=None,  # filled later by probe
                 credit_hours=credit_hours,
                 index_num=index_num,
+                fetched_at=fetched_at,
+                catalog_year=catalog_year,
+                source_host=source_host,
             )
         )
 

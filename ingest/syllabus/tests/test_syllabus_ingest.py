@@ -7,10 +7,15 @@ from __future__ import annotations
 
 import json
 import pathlib
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from http.client import HTTPMessage
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from ingest.syllabus.fetcher import semester_to_label
+from ingest.syllabus.fetcher import HB2504Fetcher, semester_to_label
 from ingest.syllabus.models import SyllabusRecord, ValidationResult
 from ingest.syllabus.parser import parse_classes_into_records
 from ingest.syllabus.validator import validate_batch
@@ -215,6 +220,9 @@ def _make_record(**overrides) -> SyllabusRecord:
         syllabus_filename=None,
         credit_hours=4,
         index_num=999,
+        fetched_at=datetime(2026, 11, 9, 5, 30, 0, tzinfo=timezone.utc),
+        catalog_year="2024-2025",
+        source_host="api.hb2504.txst.edu",
     )
     defaults.update(overrides)
     return SyllabusRecord(**defaults)
@@ -349,3 +357,291 @@ class TestEndToEnd:
         result = validate_batch(records)
         assert result.ok
         assert len(result.valid) == 0
+
+
+# ── HB2504Fetcher retry / backoff ─────────────────────────────────────
+
+def _make_http_error(status: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+    """Build a minimal HTTPError for testing."""
+    headers = HTTPMessage()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError(
+        url="https://example.com",
+        code=status,
+        msg=f"HTTP {status}",
+        hdrs=headers,
+        fp=None,
+    )
+
+
+def _make_fetcher(**kwargs) -> HB2504Fetcher:
+    """Return a fetcher with no inter-request delay (speeds up tests)."""
+    kwargs.setdefault("delay", 0.0)
+    kwargs.setdefault("backoff_base", 0.0)  # zero sleep in tests
+    return HB2504Fetcher(**kwargs)
+
+
+class TestFetcherRetry:
+    """Verify retry / backoff / Retry-After behaviour in _get_json."""
+
+    def _urlopen_responses(self, *responses):
+        """
+        Build a side_effect list for urllib.request.urlopen.
+
+        Each item in *responses* is either:
+        - an Exception subclass instance  → raised on that call
+        - a dict                          → returned as parsed JSON via a mock context manager
+        """
+        side_effects = []
+        for r in responses:
+            if isinstance(r, BaseException):
+                side_effects.append(r)
+            else:
+                body = json.dumps(r).encode()
+                mock_resp = MagicMock()
+                mock_resp.__enter__ = lambda s: s
+                mock_resp.__exit__ = MagicMock(return_value=False)
+                mock_resp.read.return_value = body
+                mock_resp.decode = body.decode
+                side_effects.append(mock_resp)
+        return side_effects
+
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_success_on_first_attempt(self, mock_urlopen):
+        """Happy-path: single successful request, no retries."""
+        payload = {"courses": []}
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+        mock_urlopen.return_value = mock_resp
+
+        fetcher = _make_fetcher()
+        result = fetcher._get_json("getcoursesfordepartment.py", {"department": "CS"})
+
+        assert result == payload
+        assert mock_urlopen.call_count == 1
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_retries_on_503_then_succeeds(self, mock_urlopen, mock_sleep):
+        """A 503 on the first attempt triggers a retry that succeeds."""
+        payload = {"courses": []}
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+
+        mock_urlopen.side_effect = [
+            _make_http_error(503),
+            mock_resp,
+        ]
+
+        fetcher = _make_fetcher()
+        result = fetcher._get_json("getcoursesfordepartment.py")
+
+        assert result == payload
+        assert mock_urlopen.call_count == 2
+        assert mock_sleep.call_count >= 1  # backoff sleep was called
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_raises_after_max_retries(self, mock_urlopen, mock_sleep):
+        """Persistent 503s exhaust all retries and re-raise the last error."""
+        fetcher = _make_fetcher(max_retries=2)
+        mock_urlopen.side_effect = _make_http_error(503)
+
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            fetcher._get_json("getcoursesfordepartment.py")
+
+        assert exc_info.value.code == 503
+        # First attempt + 2 retries = 3 total calls
+        assert mock_urlopen.call_count == 3
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_non_retryable_http_error_raises_immediately(self, mock_urlopen, mock_sleep):
+        """A 404 is not retryable and must raise on the first attempt."""
+        fetcher = _make_fetcher()
+        mock_urlopen.side_effect = _make_http_error(404)
+
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            fetcher._get_json("getcoursesfordepartment.py")
+
+        assert exc_info.value.code == 404
+        assert mock_urlopen.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_429_uses_retry_after_header(self, mock_urlopen, mock_sleep):
+        """A 429 with Retry-After header sleeps for the declared duration."""
+        payload = {"courses": []}
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+
+        mock_urlopen.side_effect = [
+            _make_http_error(429, retry_after="5"),
+            mock_resp,
+        ]
+
+        fetcher = _make_fetcher(backoff_base=99.0)  # backoff_base must NOT be used
+        fetcher._get_json("getcoursesfordepartment.py")
+
+        # The sleep called with Retry-After value (5 s), not the backoff formula
+        sleep_calls = [c.args[0] for c in mock_sleep.call_args_list]
+        assert 5.0 in sleep_calls
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_network_error_retried(self, mock_urlopen, mock_sleep):
+        """OSError (e.g. connection timeout) is retried."""
+        payload = {"courses": []}
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+
+        mock_urlopen.side_effect = [OSError("timed out"), mock_resp]
+
+        fetcher = _make_fetcher()
+        result = fetcher._get_json("getcoursesfordepartment.py")
+
+        assert result == payload
+        assert mock_urlopen.call_count == 2
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_exponential_backoff_sequence(self, mock_urlopen, mock_sleep):
+        """Backoff sleeps double on each retry attempt."""
+        fetcher = _make_fetcher(max_retries=3, backoff_base=1.0, backoff_max=100.0)
+        mock_urlopen.side_effect = _make_http_error(503)
+
+        with pytest.raises(urllib.error.HTTPError):
+            fetcher._get_json("getcoursesfordepartment.py")
+
+        # Collect all sleep durations that look like backoff (> 0)
+        sleep_durations = [c.args[0] for c in mock_sleep.call_args_list if c.args[0] > 0]
+        # Should have 3 backoff sleeps: 1s, 2s, 4s
+        assert sleep_durations == [1.0, 2.0, 4.0]
+
+    def test_retry_after_helper_parses_numeric(self):
+        """_retry_after returns float for a numeric Retry-After header."""
+        fetcher = _make_fetcher()
+        exc = _make_http_error(429, retry_after="12")
+        assert fetcher._retry_after(exc) == 12.0
+
+    def test_retry_after_helper_returns_none_on_missing(self):
+        """_retry_after returns None when the header is absent."""
+        fetcher = _make_fetcher()
+        exc = _make_http_error(429, retry_after=None)
+        assert fetcher._retry_after(exc) is None
+
+    def test_retry_after_helper_returns_none_on_non_numeric(self):
+        """_retry_after returns None for unparseable header values."""
+        fetcher = _make_fetcher()
+        exc = _make_http_error(429, retry_after="Wed, 09 Nov 2026 06:00:00 GMT")
+        assert fetcher._retry_after(exc) is None
+
+
+# ── Traceability fields ────────────────────────────────────────────────
+
+class TestTraceabilityFields:
+    """Verify fetched_at, catalog_year, and source_host propagate correctly."""
+
+    def test_make_record_has_traceability_fields(self):
+        rec = _make_record()
+        assert rec.fetched_at == datetime(2026, 11, 9, 5, 30, 0, tzinfo=timezone.utc)
+        assert rec.catalog_year == "2024-2025"
+        assert rec.source_host == "api.hb2504.txst.edu"
+
+    def test_parser_propagates_fetched_at(self, classes_data, instructor_cache):
+        """fetched_at passed to parse_classes_into_records appears on each record."""
+        ts = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+            fetched_at=ts,
+        )
+        assert all(r.fetched_at == ts for r in records)
+
+    def test_parser_propagates_catalog_year(self, classes_data, instructor_cache):
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+            catalog_year="2024-2025",
+        )
+        assert all(r.catalog_year == "2024-2025" for r in records)
+
+    def test_parser_catalog_year_defaults_to_none(self, classes_data, instructor_cache):
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+        )
+        assert all(r.catalog_year is None for r in records)
+
+    def test_parser_propagates_source_host(self, classes_data, instructor_cache):
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+            source_host="catalog.txst.edu",
+        )
+        assert all(r.source_host == "catalog.txst.edu" for r in records)
+
+    def test_parser_source_host_default(self, classes_data, instructor_cache):
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+        )
+        assert all(r.source_host == "api.hb2504.txst.edu" for r in records)
+
+    def test_parser_fetched_at_defaults_to_now(self, classes_data, instructor_cache):
+        """When fetched_at is omitted, the parser fills it in automatically."""
+        before = datetime.now(timezone.utc)
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+        )
+        after = datetime.now(timezone.utc)
+        for r in records:
+            assert before <= r.fetched_at <= after
+
+    def test_all_records_in_batch_share_fetched_at(self, classes_data, instructor_cache):
+        """All records produced from a single parse call share the same fetched_at."""
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+        )
+        timestamps = {r.fetched_at for r in records}
+        assert len(timestamps) == 1, "All records in a batch must share fetched_at"

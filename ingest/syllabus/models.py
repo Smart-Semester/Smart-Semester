@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+from datetime import datetime
 from typing import Optional
 
 
@@ -12,6 +13,17 @@ class SyllabusRecord:
     Each record represents a single class section's syllabus for a specific
     course, semester, and section.  The source_url is the canonical download
     URL and serves as the uniqueness key for upserts.
+
+    Traceability fields
+    -------------------
+    fetched_at   : UTC timestamp of the upstream API call that produced this
+                   record.  Distinct from the DB row's created_at/updated_at,
+                   which track row lifecycle rather than data freshness.
+    catalog_year : Academic year the data belongs to, e.g. ``'2024-2025'``.
+                   None when the pipeline has not been told the catalog year.
+    source_host  : Hostname of the upstream API, e.g.
+                   ``'api.hb2504.txst.edu'``.  Used to distinguish data
+                   origins when multiple sources are ingested.
     """
 
     course_code: str  # e.g. "CS1428"
@@ -27,6 +39,10 @@ class SyllabusRecord:
     syllabus_filename: Optional[str]  # from Content-Disposition header
     credit_hours: Optional[int]  # from course details
     index_num: int  # class index number from the API
+    # ── traceability ──────────────────────────────────────────────────
+    fetched_at: datetime  # UTC time this record was fetched from the API
+    catalog_year: Optional[str]  # e.g. "2024-2025"; None if not provided
+    source_host: str  # e.g. "api.hb2504.txst.edu"
 
 
 @dataclasses.dataclass

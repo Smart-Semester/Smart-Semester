@@ -1,21 +1,21 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Union, Literal, Annotated
 from enum import Enum
 
-# eligibility request and result are in there completed form
-# elibility response is temporary and depends on the catalogs implementation
-# hopefully we can just use this one anyways
+# eligibility request and result are in their completed form.
+# CatalogResponse is the agreed contract shape — see docs/Catalog-API-Contract.md.
 
-# defines eligibility requests (JSON structure for what courses need to be checked)
+# ── Eligibility request ───────────────────────────────────────────────────────
+
 class CompletedCourse(BaseModel):
     code: str
     grade: Literal["A", "B", "C", "D", "F", "IP", "W"]
 
 class EligibilityRequest(BaseModel):
     planned_codes: List[str]
-    completed_courses: List[CompletedCourse] = Field(default_factory=list) 
+    completed_courses: List[CompletedCourse] = Field(default_factory=list)
 
-# JSON example for a catalog response
+# JSON example for a catalog response (from Catalog-API-Contract.md):
 # this is not final and is dependent on the catalog service
 # implementation
 # {
@@ -35,38 +35,76 @@ class EligibilityRequest(BaseModel):
 #       }
 #     ]
 #   },
-#   "coreqs": null
+#   "coreqs": null,
+#   "requirements_parsed": true
 # }
 
-# defines a (temporary) structure for the catalog response
+# ── Requirement tree nodes ────────────────────────────────────────────────────
+#
+# Node kinds:
+#   course  — a single course with a minimum passing grade
+#   all_of  — ALL children must be satisfied (AND)
+#   any_of  — AT LEAST ONE child must be satisfied (OR)
+#   manual  — free-text requirement (consent, standing, etc.)
+#
+# Contract rule: null means "no requirement". An all_of/any_of with zero
+# children is never valid — the catalog parser must produce null instead.
 class CourseNode(BaseModel):
-    kind: Literal["course"] = "course"  
+    kind: Literal["course"] = "course"
     code: str
-    min_grade: Literal["A", "B", "C", "D"] 
+    min_grade: Literal["A", "B", "C", "D"]
 
 class AllOfNode(BaseModel):
     kind: Literal["all_of"] = "all_of"
-    children: List["RequirementNode"] = Field(default_factory=list)
+    children: List["RequirementNode"]
+
+    @model_validator(mode="after")
+    def children_must_not_be_empty(self) -> "AllOfNode":
+        if not self.children:
+            raise ValueError(
+                "all_of node must have at least one child. "
+                "Use null at the prereqs/coreqs level to represent no requirements."
+            )
+        return self
 
 class AnyOfNode(BaseModel):
     kind: Literal["any_of"] = "any_of"
-    children: List["RequirementNode"] = Field(default_factory=list)
+    children: List["RequirementNode"]
+
+    @model_validator(mode="after")
+    def children_must_not_be_empty(self) -> "AnyOfNode":
+        if not self.children:
+            raise ValueError(
+                "any_of node must have at least one child. "
+                "Use null at the prereqs/coreqs level to represent no requirements."
+            )
+        return self
 
 class ManualNode(BaseModel):
     kind: Literal["manual"] = "manual"
     requirements: str
 
-# builds a tree structure that can uses the above nodes to define prereqs/coreqs
+# builds a tree structure using the above nodes to define prereqs/coreqs.
+# Discriminated union — Pydantic picks the right model from the "kind" field.
 RequirementNode = Annotated[Union[CourseNode, AllOfNode, AnyOfNode, ManualNode], Field(discriminator="kind")]
 # rebuilds now that RequirementNode is defined
 AllOfNode.model_rebuild()
 AnyOfNode.model_rebuild()
+
+# ── Catalog response ──────────────────────────────────────────────────────────
 
 class CatalogResponse(BaseModel):
     code: str
     title: str
     prereqs: RequirementNode | None = None
     coreqs: RequirementNode | None = None
+    requirements_parsed: bool = False
+    # requirements_parsed distinguishes two states that both produce null prereqs/coreqs:
+    #   False → requirements have NOT been parsed yet (raw text may exist in DB)
+    #   True  → requirements were parsed; null means the course genuinely has none
+    # The planner must treat False as "requirements unknown", not "no requirements".
+
+# ── Eligibility response ──────────────────────────────────────────────────────
 
 # defines the response to an eligibility check
 class CourseStatus(str, Enum):
@@ -77,10 +115,10 @@ class CourseStatus(str, Enum):
 
 class CourseResponse(BaseModel):
     status: CourseStatus
-    status_description: str | None = None # used to explain cannot_verify errors
+    status_description: str | None = None  # explains cannot_verify errors
     code: str
     unmet_prereqs: RequirementNode | None = None
     unmet_coreqs: RequirementNode | None = None
 
 class EligibilityResponse(BaseModel):
-    results: List[CourseResponse] = Field(default_factory=list) 
+    results: List[CourseResponse] = Field(default_factory=list)
