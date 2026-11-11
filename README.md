@@ -5,6 +5,7 @@ Smart Semester is a registration-planning helper for university students. Given 
 - `frontend/` - Next.js app
 - `services/catalog-service/` - courses, prereqs, degree requirements (FastAPI)
 - `services/resources-service/` - curated resources + LLM summaries (FastAPI)
+- `services/planner-service/` - checks prereqs, parses transcripts (FastAPI)
 - `ingest/` - catalog scraper + manual seed data
 - `infra/` - Docker, GCP config
 - `docs/` - PRD and diagrams

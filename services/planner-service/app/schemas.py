@@ -42,8 +42,7 @@ class EligibilityRequest(BaseModel):
 class CourseNode(BaseModel):
     kind: Literal["course"] = "course"  
     code: str
-    min_grade: Literal["A", "B", "C", "D"] | None = None 
-    concurrent_ok: bool = False
+    min_grade: Literal["A", "B", "C", "D"] 
 
 class AllOfNode(BaseModel):
     kind: Literal["all_of"] = "all_of"
