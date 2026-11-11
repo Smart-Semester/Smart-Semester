@@ -1,27 +1,20 @@
 from fastapi import APIRouter
-from app.schemas import EligibilityRequest, EligibilityResponse
+from app.schemas import EligibilityRequest, EligibilityResponse, CatalogResponse
 from app.services import evaluator
-from app.clients import catalog
+from app.clients import fake_catalog
 from typing import List
 
 router = APIRouter()
 
-# TODO: add response_model=<your response model> to the decorator so FastAPI
-#       validates and documents the output shape.
 @router.post("/eligibility-checks", response_model=EligibilityResponse)
-def create_eligibility_check(eligibility_request: EligibilityRequest):
-    # TODO step 2: normalize codes (uppercase, strip spaces).
-    # eligibilityRequest.prereqs.children
+def create_eligibility_check(eligibilityRequest: EligibilityRequest):
+    # normalize course codes
+    eligibilityRequest.planned_codes = [c.upper().replace(" ","") for c in eligibilityRequest.planned_codes]
+    for completed_course in eligibilityRequest.completed_courses:
+        completed_course.code = completed_course.code.upper().replace(" ","")
 
-    # TODO step 3: fetch planned courses from Catalog in one batch call.
-    #   - Codes Catalog doesn't return are "unknown_course" results,
-    #     NOT a 404 for the whole request. One bad code must not sink the batch.
-    #   - If Catalog is down or times out, return 503 with a clear message.
+    catalogResponseList = fake_catalog.get_courses(eligibilityRequest.planned_codes)
 
+    results = evaluator.evaluate(eligibilityRequest, catalogResponseList)
 
-    # TODO step 4: results = evaluator.evaluate(...)
-    #   The evaluator never touches the network or DB, so it can be unit
-    #   tested with hand-written trees.
-
-    # TODO step 5: return {"results": results}
-    return {"results": []}  # placeholder so the app imports and runs
+    return results

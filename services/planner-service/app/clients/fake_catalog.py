@@ -1,3 +1,4 @@
+from app.schemas import CatalogResponse
 FAKE_COURSES = {
     "CS3358": {
         "code": "CS3358",
