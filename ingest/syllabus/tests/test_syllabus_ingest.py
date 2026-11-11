@@ -645,3 +645,150 @@ class TestTraceabilityFields:
         )
         timestamps = {r.fetched_at for r in records}
         assert len(timestamps) == 1, "All records in a batch must share fetched_at"
+
+
+# ── Extended Validator: format checks ─────────────────────────────────
+
+class TestValidatorFormatChecks:
+    """Verify the expanded format-level validation rules."""
+
+    def test_valid_course_code_formats(self):
+        for code in ("CS1428", "MATH2471", "PHIL1305", "ENG2254", "COMM1315", "CIS4360"):
+            result = validate_batch([_make_record(course_code=code)])
+            assert result.ok, f"Expected {code!r} to be valid, got: {result.errors}"
+
+    def test_invalid_course_code_lowercase(self):
+        result = validate_batch([_make_record(course_code="cs1428")])
+        assert not result.ok
+        assert "course_code" in result.errors[0][1]
+
+    def test_invalid_course_code_no_digits(self):
+        result = validate_batch([_make_record(course_code="CSHELLO")])
+        assert not result.ok
+        assert "course_code" in result.errors[0][1]
+
+    def test_invalid_course_code_too_short_prefix(self):
+        result = validate_batch([_make_record(course_code="C1428")])
+        assert not result.ok
+
+    def test_valid_semester_codes(self):
+        for code in ("202510", "202530", "202550", "202506", "202507", "202512", "202505"):
+            result = validate_batch([_make_record(semester_code=code)])
+            assert result.ok, f"Expected {code!r} to be valid, got: {result.errors}"
+
+    def test_invalid_semester_code_bad_month(self):
+        result = validate_batch([_make_record(semester_code="202599")])
+        assert not result.ok
+        assert "semester_code" in result.errors[0][1]
+
+    def test_invalid_semester_code_too_short(self):
+        result = validate_batch([_make_record(semester_code="20251")])
+        assert not result.ok
+
+    def test_valid_https_url(self):
+        result = validate_batch([_make_record(
+            source_url="https://api.hb2504.txst.edu/py/getsyllabus.py?class=12345"
+        )])
+        assert result.ok
+
+    def test_invalid_http_url(self):
+        result = validate_batch([_make_record(
+            source_url="http://api.hb2504.txst.edu/py/getsyllabus.py?class=12345"
+        )])
+        assert not result.ok
+        assert "source_url" in result.errors[0][1]
+
+    def test_invalid_relative_url(self):
+        result = validate_batch([_make_record(source_url="/getsyllabus.py?class=12345")])
+        assert not result.ok
+        assert "source_url" in result.errors[0][1]
+
+    def test_has_syllabus_false_still_valid(self):
+        """has_syllabus=False rows must pass validation — no-syllabus sections
+        are explicitly tracked and stored in the database."""
+        result = validate_batch([_make_record(has_syllabus=False)])
+        assert result.ok
+        assert len(result.valid) == 1
+
+    def test_multiple_format_errors_reported_together(self):
+        """All format errors on a single record should be reported together."""
+        result = validate_batch([_make_record(
+            course_code="bad",
+            semester_code="202599",
+            source_url="http://insecure.example.com",
+        )])
+        assert not result.ok
+        err_msg = result.errors[0][1]
+        assert "course_code" in err_msg
+        assert "semester_code" in err_msg
+        assert "source_url" in err_msg
+
+
+# ── CLI: --fail-on-fetch-errors & --probe-syllabi ─────────────────────
+
+class TestCLIFlags:
+    """Verify the new CLI flags without hitting the network."""
+
+    def test_help_includes_probe_syllabi(self):
+        import subprocess, sys
+        result = subprocess.run(
+            [sys.executable, "-m", "ingest.syllabus.cli", "--help"],
+            capture_output=True, text=True,
+            cwd=str(pathlib.Path(__file__).parents[3]),
+        )
+        assert "--probe-syllabi" in result.stdout
+
+    def test_help_includes_fail_on_fetch_errors(self):
+        import subprocess, sys
+        result = subprocess.run(
+            [sys.executable, "-m", "ingest.syllabus.cli", "--help"],
+            capture_output=True, text=True,
+            cwd=str(pathlib.Path(__file__).parents[3]),
+        )
+        assert "--fail-on-fetch-errors" in result.stdout
+
+    def test_pipeline_aborts_on_fetch_errors_with_strict_flag(self):
+        """With fail_on_fetch_errors=True, the pipeline returns exit code 1
+        when fetch errors occurred, before any writes."""
+        from ingest.syllabus.cli import _run_pipeline
+
+        # Patch fetcher to raise on course list fetch
+        with patch("ingest.syllabus.cli.HB2504Fetcher") as MockFetcher:
+            mock_instance = MockFetcher.return_value
+            mock_instance.fetch_cs_courses.return_value = [
+                {"number": "CS1428", "title": "FOUNDATIONS OF COMPUTER SCI I"},
+            ]
+            mock_instance.fetch_course_details.side_effect = OSError("network down")
+
+            exit_code = _run_pipeline(
+                apply=False,
+                database_url=None,
+                max_semesters=1,
+                probe_syllabi=False,
+                fail_on_fetch_errors=True,
+                verbose=False,
+                catalog_year=None,
+            )
+        assert exit_code == 1
+
+    def test_pipeline_continues_on_fetch_errors_without_strict_flag(self):
+        """Without fail_on_fetch_errors, the pipeline returns 0 even with errors."""
+        from ingest.syllabus.cli import _run_pipeline
+
+        with patch("ingest.syllabus.cli.HB2504Fetcher") as MockFetcher:
+            mock_instance = MockFetcher.return_value
+            mock_instance.fetch_cs_courses.return_value = [
+                {"number": "CS1428", "title": "FOUNDATIONS OF COMPUTER SCI I"},
+            ]
+            mock_instance.fetch_course_details.side_effect = OSError("network down")
+
+            exit_code = _run_pipeline(
+                apply=False,
+                database_url=None,
+                max_semesters=1,
+                probe_syllabi=False,
+                fail_on_fetch_errors=False,
+                verbose=False,
+                catalog_year=None,
+            )
+        assert exit_code == 0

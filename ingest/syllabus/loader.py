@@ -6,6 +6,23 @@ Design choices:
 - Uses INSERT ... ON CONFLICT (source_url) DO UPDATE for safe re-runs.
 - Never truncates or deletes existing data.
 - Reports failures clearly.
+
+Schema management
+-----------------
+The catalog.syllabi table (and all other tables) are created and evolved by
+the versioned SQL migrations in init-db/*.sql, which are the authoritative
+schema-management approach.  This loader no longer issues CREATE TABLE — doing
+so would bypass migration history and risk schema drift.
+
+Before running --apply against a fresh Postgres volume, apply the migrations:
+    psql "$DATABASE_URL" -f init-db/01-init.sql
+    psql "$DATABASE_URL" -f init-db/02-syllabi.sql
+    psql "$DATABASE_URL" -f init-db/03-traceability.sql
+    psql "$DATABASE_URL" -f init-db/04-req-tree.sql
+    psql "$DATABASE_URL" -f init-db/05-uniqueness-and-fk.sql
+
+For Docker-managed volumes the init-db/ directory is mounted at
+/docker-entrypoint-initdb.d and migrations run automatically on first start.
 """
 from __future__ import annotations
 
@@ -16,30 +33,6 @@ from typing import Optional
 from .models import SyllabusRecord
 
 logger = logging.getLogger(__name__)
-
-CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS catalog.syllabi (
-    syllabus_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    course_code     VARCHAR NOT NULL,
-    course_name     VARCHAR NOT NULL,
-    section         VARCHAR NOT NULL,
-    semester        VARCHAR NOT NULL,
-    semester_code   VARCHAR NOT NULL,
-    instructor_name VARCHAR,
-    instructor_plid VARCHAR,
-    source_url      VARCHAR NOT NULL UNIQUE,
-    has_syllabus    BOOLEAN NOT NULL DEFAULT FALSE,
-    original_format VARCHAR,
-    syllabus_filename VARCHAR,
-    credit_hours    INTEGER,
-    index_num       BIGINT NOT NULL,
-    fetched_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    catalog_year    VARCHAR,
-    source_host     VARCHAR NOT NULL DEFAULT 'api.hb2504.txst.edu',
-    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-"""
 
 UPSERT_SQL = """
 INSERT INTO catalog.syllabi (
@@ -106,8 +99,6 @@ def load_records(
     try:
         with conn:
             with conn.cursor() as cur:
-                # Ensure the table exists (idempotent)
-                cur.execute(CREATE_TABLE_SQL)
                 count = 0
                 for rec in records:
                     cur.execute(UPSERT_SQL, _record_to_params(rec))

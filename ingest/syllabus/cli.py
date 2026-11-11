@@ -1,11 +1,20 @@
 """CLI entry-point for the syllabus ingest pipeline.
 
+Pipeline boundary
+-----------------
+This pipeline fetches CS course listings, available semesters, class sections,
+and instructor metadata from the TXST HB 2504 API, then upserts syllabus
+listing metadata (including has_syllabus=False rows) into the database.
+
+It does NOT download syllabus PDFs or extract syllabus text. PDF download and
+text extraction are reserved for a later phase (see checklist section 6).
+
 Usage:
     # Dry-run preview (default — no database writes)
     python -m ingest.syllabus.cli
 
     # Apply to database
-    DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \
+    DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \\
         python -m ingest.syllabus.cli --apply
 
     # Limit semesters fetched per course (faster for testing)
@@ -13,6 +22,12 @@ Usage:
 
     # Pass the catalog year for traceability
     python -m ingest.syllabus.cli --catalog-year 2024-2025
+
+    # Probe each syllabus URL for content-type and filename (slow)
+    python -m ingest.syllabus.cli --probe-syllabi
+
+    # Fail the run if any fetch errors occur (strict mode)
+    python -m ingest.syllabus.cli --apply --fail-on-fetch-errors
 """
 from __future__ import annotations
 
@@ -22,6 +37,8 @@ import logging
 import os
 import sys
 import time
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 
 from .fetcher import HB2504Fetcher
@@ -44,12 +61,35 @@ def _configure_logging(verbose: bool) -> None:
     )
 
 
+def _probe_syllabus_url(url: str) -> tuple[str | None, str | None]:
+    """HEAD the syllabus URL to discover content-type and filename.
+
+    Returns (original_format, syllabus_filename).  Both are None on failure.
+    This is intentionally best-effort — a probe failure does not invalidate
+    the record; the row is still stored with the metadata fields as None.
+    """
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        req.add_header("User-Agent", "SmartSemester-Ingest/1.0 (probe)")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content_type = resp.headers.get("Content-Type")
+            disposition = resp.headers.get("Content-Disposition", "")
+            filename: str | None = None
+            if "filename=" in disposition:
+                filename = disposition.split("filename=")[-1].strip().strip('"')
+            return content_type, filename
+    except Exception as exc:
+        logger.debug("Probe failed for %s: %s", url, exc)
+        return None, None
+
+
 def _run_pipeline(
     *,
     apply: bool,
     database_url: str | None,
     max_semesters: int | None,
     probe_syllabi: bool,
+    fail_on_fetch_errors: bool,
     verbose: bool,
     catalog_year: str | None,
 ) -> int:
@@ -150,10 +190,46 @@ def _run_pipeline(
             logger.warning("  • %s", err)
 
     # ------------------------------------------------------------------
+    # Step 2b (optional): Probe syllabus URLs for content-type/filename
+    # ------------------------------------------------------------------
+    if probe_syllabi:
+        has_syllabus_records = [r for r in all_records if r.has_syllabus]
+        logger.info(
+            "Probing %d syllabus URLs (this may be slow)...",
+            len(has_syllabus_records),
+        )
+        probed: list[SyllabusRecord] = []
+        for rec in all_records:
+            if rec.has_syllabus:
+                content_type, filename = _probe_syllabus_url(rec.source_url)
+                # SyllabusRecord is frozen; rebuild with updated probe fields.
+                import dataclasses
+                probed.append(dataclasses.replace(
+                    rec,
+                    original_format=content_type,
+                    syllabus_filename=filename,
+                ))
+            else:
+                probed.append(rec)
+        all_records = probed
+        logger.info("Probe complete.")
+
+    # ------------------------------------------------------------------
     # Step 3: Validate
     # ------------------------------------------------------------------
     result = validate_batch(all_records)
     print("\n" + result.summary())
+
+    # ------------------------------------------------------------------
+    # Step 3b: Decide whether fetch errors block --apply
+    # ------------------------------------------------------------------
+    if fetch_errors and fail_on_fetch_errors:
+        logger.error(
+            "%d fetch error(s) occurred and --fail-on-fetch-errors is set. "
+            "Aborting before any database writes.",
+            len(fetch_errors),
+        )
+        return 1
 
     # ------------------------------------------------------------------
     # Step 4: Preview or apply
@@ -170,11 +246,18 @@ def _run_pipeline(
         if len(result.valid) > 10:
             print(f"  ... and {len(result.valid) - 10} more.")
 
+        no_syllabus_count = sum(1 for r in result.valid if not r.has_syllabus)
         print(
             f"\nTotal valid records: {len(result.valid)}"
+            f"  |  No-syllabus rows: {no_syllabus_count}"
             f"  |  Errors: {len(result.errors)}"
             f"  |  Fetch errors: {len(fetch_errors)}"
         )
+        if fetch_errors and not fail_on_fetch_errors:
+            print(
+                "NOTE: Fetch errors occurred but --fail-on-fetch-errors was not set. "
+                "Re-run with --fail-on-fetch-errors to treat errors as fatal."
+            )
         print("\nRe-run with --apply to write to the database.")
         return 0
 
@@ -191,7 +274,17 @@ def _run_pipeline(
 
     try:
         count = load_records(result.valid, database_url)
+        no_syllabus_count = sum(1 for r in result.valid if not r.has_syllabus)
         print(f"\nSuccessfully upserted {count} syllabus records.")
+        print(
+            f"  of which {no_syllabus_count} have has_syllabus=False "
+            "(section exists, no syllabus available)."
+        )
+        if fetch_errors:
+            print(
+                f"WARNING: {len(fetch_errors)} fetch error(s) occurred during this run. "
+                "Some courses or semesters may be missing. See log for details."
+            )
         return 0
     except Exception as exc:
         logger.error("Apply failed: %s", exc)
@@ -218,7 +311,22 @@ def main() -> None:
         "--probe-syllabi",
         action="store_true",
         default=False,
-        help="HEAD each syllabus URL to discover content-type and filename (slow).",
+        help=(
+            "HEAD each syllabus URL to discover content-type and filename. "
+            "Populates original_format and syllabus_filename on each record. "
+            "Slow for large batches; disabled by default."
+        ),
+    )
+    parser.add_argument(
+        "--fail-on-fetch-errors",
+        action="store_true",
+        default=False,
+        help=(
+            "Abort the run (before any database writes) if any upstream fetch "
+            "errors occur. By default the pipeline continues and writes whatever "
+            "valid records it collected (partial ingest). Use this flag for "
+            "stricter runs where a partial ingest is not acceptable."
+        ),
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -250,6 +358,7 @@ def main() -> None:
         database_url=database_url,
         max_semesters=args.max_semesters,
         probe_syllabi=args.probe_syllabi,
+        fail_on_fetch_errors=args.fail_on_fetch_errors,
         verbose=args.verbose,
         catalog_year=args.catalog_year,
     )

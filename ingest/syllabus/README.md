@@ -2,6 +2,16 @@
 
 Ingests CS course syllabi from the [TXST HB 2504 site](https://hb2504.txst.edu/browsecourses.html#CS) into the Smart Semester database.
 
+## Pipeline Boundary
+
+This pipeline covers:
+- CS course listings (all courses in the department)
+- Available semesters and class sections per course
+- Instructor metadata (resolved by PLID)
+- Syllabus listing metadata — including sections where `has_syllabus=False`
+
+It does **not** download syllabus PDFs or extract syllabus text. PDF download and text extraction are a later phase (see checklist section 6).
+
 ## How It Works
 
 The HB 2504 site exposes a JSON API at `https://api.hb2504.txst.edu/py/`. The pipeline walks through four API endpoints in sequence:
@@ -16,7 +26,7 @@ getcoursesfordepartment.py?department=CS
                   getinstructordetails.py?plid=x9028bf7ba7de
 ```
 
-Each class section with a syllabus produces one `SyllabusRecord` with:
+Each class section produces one `SyllabusRecord` with:
 - Course code and name
 - Section number
 - Semester (human-readable + raw code)
@@ -24,13 +34,17 @@ Each class section with a syllabus produces one `SyllabusRecord` with:
 - Canonical syllabus download URL (used as the uniqueness key)
 - Whether a syllabus document exists (`has_syllabus` flag)
 
+### No-syllabus sections
+
+Sections where `has_syllabus=False` are **valid records** and are stored in the database. The absence of a syllabus is meaningful data — downstream tools use it to tell students that no syllabus is available for a section. These rows are not filtered out by the validator.
+
 ### Pipeline Steps
 
 | Step | Module | Description |
 |------|--------|-------------|
 | 1. Fetch | `fetcher.py` | Talks to the HB 2504 API with rate limiting (0.25s between requests) |
 | 2. Parse | `parser.py` | Converts raw API JSON into `SyllabusRecord` dataclasses |
-| 3. Validate | `validator.py` | Checks required fields, detects duplicates |
+| 3. Validate | `validator.py` | Checks required fields, format (course code, semester code, URL), and duplicates |
 | 4. Load | `loader.py` | Upserts to Postgres via `INSERT ... ON CONFLICT` in a transaction |
 
 ## Quick Start
@@ -53,6 +67,9 @@ python -m ingest.syllabus.cli --max-semesters 2
 
 # Verbose output
 python -m ingest.syllabus.cli --max-semesters 1 -v
+
+# Probe each syllabus URL for content-type and filename
+python -m ingest.syllabus.cli --max-semesters 1 --probe-syllabi
 ```
 
 ### Apply to Database
@@ -61,54 +78,36 @@ python -m ingest.syllabus.cli --max-semesters 1 -v
 # 1. Make sure Postgres is running
 docker compose up -d db
 
-#2. To connect and run SQL querys via terminal (Optional)
-docker exec -it smart_semester_db psql -U postgres -d smart_semester
+# 2. Apply all migrations (fresh volume: auto-applied; existing volume: run manually)
+for f in init-db/*.sql; do
+  docker exec -i smart_semester_db psql -U postgres -d smart_semester < "$f"
+done
 
-#List tables w/
-SELECT table_name 
-FROM information_schema.tables 
-WHERE table_type = 'BASE TABLE' 
-  AND table_schema NOT IN ('pg_catalog', 'information_schema');
-
-#Exit w/
-\q
-
-# 3. Run the migration (only needed once, or on existing databases)
-#    Note: If this is a FRESH database volume, the init-db/ scripts
-#    run automatically. For EXISTING volumes, run manually:
-docker exec -i smart_semester_db psql -U postgres -d smart_semester < init-db/02-syllabi.sql
-
-# 4. Run the importer with --apply
+# 3. Run the importer with --apply
 DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \
-    python -m ingest.syllabus.cli --apply
+    python -m ingest.syllabus.cli --apply --catalog-year 2024-2025
+
+# 4. (Strict mode) Abort if any fetch errors occur instead of partial ingest
+DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \
+    python -m ingest.syllabus.cli --apply --fail-on-fetch-errors
 ```
 
-## Database Migration
+## CLI Flags
 
-The migration script [`init-db/02-syllabi.sql`](../init-db/02-syllabi.sql) adds a `catalog.syllabi` table:
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--apply` | off | Write records to Postgres (default is dry-run) |
+| `--catalog-year YEAR` | None | Tag all rows with a catalog year, e.g. `2024-2025` |
+| `--max-semesters N` | all | Limit semesters per course (useful for testing) |
+| `--probe-syllabi` | off | HEAD each syllabus URL to discover content-type and filename |
+| `--fail-on-fetch-errors` | off | Abort before writes if any upstream fetch errors occur |
+| `--verbose` / `-v` | off | Enable debug logging |
 
-```sql
-CREATE TABLE IF NOT EXISTS catalog.syllabi (
-    syllabus_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    course_code       VARCHAR NOT NULL,
-    course_name       VARCHAR NOT NULL,
-    section           VARCHAR NOT NULL,
-    semester          VARCHAR NOT NULL,       -- "Fall 2024"
-    semester_code     VARCHAR NOT NULL,       -- "202510"
-    instructor_name   VARCHAR,
-    instructor_plid   VARCHAR,
-    source_url        VARCHAR NOT NULL UNIQUE, -- uniqueness key
-    has_syllabus      BOOLEAN NOT NULL DEFAULT FALSE,
-    original_format   VARCHAR,
-    syllabus_filename VARCHAR,
-    credit_hours      INTEGER,
-    index_num         BIGINT NOT NULL,
-    created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-```
+## Fetch Error Policy
 
-> **Important:** Docker's `init-db/` scripts only run when a database volume is first created. If you already have a `postgres_data` volume, you must run the migration manually (see step 2 above). The migration uses `IF NOT EXISTS` so it's safe to re-run.
+By default the pipeline uses **partial ingest**: if individual course or semester fetches fail, the error is logged and the pipeline continues with whatever valid records it collected. This is logged clearly in the output summary.
+
+To require a clean run (no errors allowed), use `--fail-on-fetch-errors`. The pipeline will abort **before any database writes** if errors occurred.
 
 ## Safety Guarantees
 
@@ -118,6 +117,20 @@ CREATE TABLE IF NOT EXISTS catalog.syllabi (
 - **Upsert on `source_url`**: Re-running the importer updates existing records, never creates duplicates
 - **Never truncates**: Existing data is preserved
 - **Validation before writing**: All records are validated; errors are reported before any writes
+
+## Database Migration
+
+Versioned migrations in `init-db/` are the authoritative schema source. See [`init-db/migrate.py`](../init-db/migrate.py) for a runner that applies all migrations in order.
+
+| File | What it adds |
+|------|-------------|
+| `01-init.sql` | `catalog.courses`, `resources.summaries`, `resources.links` |
+| `02-syllabi.sql` | `catalog.syllabi` table + indexes |
+| `03-traceability.sql` | `fetched_at`, `catalog_year`, `source_host` columns |
+| `04-req-tree.sql` | `prereq_tree`, `coreq_tree` JSONB + `requirements_parsed` |
+| `05-uniqueness-and-fk.sql` | `UNIQUE(course_code, catalog_year)` + composite lookup index |
+
+> **Important:** Docker's `init-db/` scripts only run when a database volume is first created. For existing volumes, apply migrations manually (all use `IF NOT EXISTS` so they're safe to re-run).
 
 ## Semester Code Encoding
 
@@ -135,7 +148,7 @@ Example: `202510` → Fall 2024 (year 2025 decremented for month 10).
 
 ## Limitations
 
-- **Syllabus text extraction is not implemented.** Syllabi are served as PDFs. Extracting text from PDFs would require a heavy dependency (e.g., `pdfminer`, `pymupdf`). The pipeline captures the download URL and metadata; text extraction can be added later.
-- **Instructor names require an extra API call per unique instructor.** The pipeline caches these to minimize requests, but a full run across all semesters will make many API calls.
-- **The `--probe-syllabi` flag** sends a HEAD request per syllabus to discover `Content-Type` and filename, but is slow for large batches (disabled by default).
+- **Syllabus text extraction is not implemented.** Syllabi are served as PDFs. The pipeline captures the download URL and metadata; text extraction is a later phase.
+- **Instructor names require an extra API call per unique instructor.** The pipeline caches these to minimize requests.
+- **The `--probe-syllabi` flag** sends a HEAD request per `has_syllabus=True` record and is slow for large batches. It is best-effort — a probe failure does not invalidate the record.
 - **robots.txt**: The HB 2504 site returns 404 for `/robots.txt` (no restrictions). The pipeline uses a descriptive User-Agent and rate limiting regardless.
