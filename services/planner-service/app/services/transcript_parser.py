@@ -1,3 +1,5 @@
+from app.schemas import TranscriptResponse
+import re
 # example transcript: ((# )+<actual transcript data>)
 # Fall 2023
 # Course	Title	Grade	Credits
@@ -83,4 +85,20 @@
 # ^(?P<code>[A-Z]{2,4})\s?(?P<number>\d{4})\s+(?P<title>.+?)\s+(?P<grade>[A-Z]{1,2})\s+(?P<credits>\d+(?:\.\d+)?)\s*$
 
 def parse_transcript(transcript: str):
-    # nothing so far
+    # split input string into multi-line input strings
+    lines = re.split("\n", transcript)
+
+    # compile regex with python raw string and compile it with re.compile()
+    regex = r"^(?P<code>[A-Z]{2,4})\s?(?P<number>\d{4})\s+(?P<title>.+?)\s+(?P<grade>[A-Z]{1,2})\s+(?P<credits>\d+(?:\.\d+)?)\s*$"
+    regex = re.compile(regex)
+
+    response: TranscriptResponse
+    for line in lines:
+        response.courses = {
+                code = code + number,
+                title = title,
+                grade = grade,
+        }
+
+    return response
+    # return 400 or 422 if doesn't fit
