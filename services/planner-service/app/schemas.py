@@ -2,14 +2,14 @@ from pydantic import BaseModel, Field
 from typing import List, Union, Literal, Annotated
 from enum import Enum
 
-# eligibility request and result are in there completed form
+# eligibility request and result are in their completed forms
 # elibility response is temporary and depends on the catalogs implementation
 # hopefully we can just use this one anyways
 
 # defines eligibility requests (JSON structure for what courses need to be checked)
 class CompletedCourse(BaseModel):
     code: str
-    grade: Literal["A", "B", "C", "D", "F", "IP", "W"]
+    grade: Literal["A", "B", "C", "D", "F", "IP", "W", "CR"]
 
 class EligibilityRequest(BaseModel):
     planned_codes: List[str]
@@ -84,3 +84,6 @@ class CourseResponse(BaseModel):
 
 class EligibilityResponse(BaseModel):
     results: List[CourseResponse] = Field(default_factory=list) 
+
+class TranscriptRequest(BaseMode):
+    text: str
