@@ -85,5 +85,5 @@ class CourseResponse(BaseModel):
 class EligibilityResponse(BaseModel):
     results: List[CourseResponse] = Field(default_factory=list) 
 
-class TranscriptRequest(BaseMode):
+class TranscriptRequest(BaseModel):
     text: str
