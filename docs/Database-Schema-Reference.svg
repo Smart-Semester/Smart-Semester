@@ -1,0 +1,299 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2750" height="2010" viewBox="0 0 2750 2010" role="img" aria-labelledby="title description">
+  <title id="title">Smart Semester database schema reference</title>
+  <desc id="description">All six tables defined by the current database migrations, with columns, types, key constraints, indexes, enforced foreign keys, and logical course-code matches distinguished.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M1,1 L11,6 L1,11 z" fill="#26364a"/>
+    </marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #1c2733; }
+      .title { font-size: 46px; font-weight: 700; }
+      .subtitle { font-size: 22px; fill: #526170; }
+      .schema-title { font-size: 30px; font-weight: 700; }
+      .table-title { font-size: 25px; font-weight: 700; fill: #ffffff; }
+      .column { font-size: 18px; }
+      .type { font-size: 17px; fill: #526170; }
+      .badge { font-size: 14px; font-weight: 700; }
+      .legend { font-size: 18px; }
+      .note { font-size: 17px; fill: #334155; }
+      .small { font-size: 15px; fill: #526170; }
+      .relation { font-size: 16px; font-weight: 700; }
+      .row-a { fill: #f7fafc; }
+      .row-b { fill: #edf3f8; }
+      .card { fill: #ffffff; stroke: #9aa8b6; stroke-width: 2; }
+      .catalog-header { fill: #245b8f; }
+      .resources-header { fill: #28735f; }
+      .fk { fill: none; stroke: #26364a; stroke-width: 4; marker-end: url(#arrow); }
+      .logical { fill: none; stroke: #b66a12; stroke-width: 4; stroke-dasharray: 11 9; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="2750" height="2010" fill="#ffffff"/>
+  <text x="70" y="72" class="title">Smart Semester — Database Schema Reference</text>
+  <text x="72" y="112" class="subtitle">Migration-defined schema • all tables, columns, key constraints, and query-relevant indexes</text>
+
+  <g transform="translate(72,145)">
+    <line x1="0" y1="0" x2="64" y2="0" class="fk"/>
+    <text x="78" y="6" class="legend">Enforced foreign key</text>
+    <line x1="340" y1="0" x2="404" y2="0" class="logical"/>
+    <text x="418" y="6" class="legend">Logical code match only (not an FK)</text>
+    <text x="850" y="6" class="legend">PK = primary key • FK = foreign key • UQ = unique • NN = NOT NULL • IDX = index</text>
+  </g>
+
+  <rect x="55" y="185" width="1785" height="1700" rx="18" fill="#f3f7fb" stroke="#b9c9d8" stroke-width="2"/>
+  <text x="85" y="230" class="schema-title" fill="#245b8f">catalog</text>
+  <rect x="1860" y="185" width="835" height="1700" rx="18" fill="#f2f8f5" stroke="#b8d3c7" stroke-width="2"/>
+  <text x="1890" y="230" class="schema-title" fill="#28735f">resources</text>
+
+  <!-- catalog.courses -->
+  <g>
+    <rect x="100" y="300" width="780" height="402" rx="12" class="card"/>
+    <path d="M112,300 h756 a12,12 0 0 1 12,12 v42 h-780 v-42 a12,12 0 0 1 12,-12 z" class="catalog-header"/>
+    <text x="125" y="337" class="table-title">courses</text>
+    <text x="665" y="334" class="small" fill="#ffffff">11 columns</text>
+    <g>
+      <rect x="102" y="354" width="776" height="31" class="row-a"/>
+      <text x="122" y="376" class="column">course_code</text><text x="435" y="376" class="type">VARCHAR</text><text x="723" y="376" class="badge">PK, NN</text>
+      <rect x="102" y="385" width="776" height="31" class="row-b"/>
+      <text x="122" y="407" class="column">course_name</text><text x="435" y="407" class="type">VARCHAR</text><text x="723" y="407" class="badge">NN</text>
+      <rect x="102" y="416" width="776" height="31" class="row-a"/>
+      <text x="122" y="438" class="column">description</text><text x="435" y="438" class="type">TEXT</text>
+      <rect x="102" y="447" width="776" height="31" class="row-b"/>
+      <text x="122" y="469" class="column">prereq_text</text><text x="435" y="469" class="type">TEXT</text>
+      <rect x="102" y="478" width="776" height="31" class="row-a"/>
+      <text x="122" y="500" class="column">coreq_text</text><text x="435" y="500" class="type">TEXT</text>
+      <rect x="102" y="509" width="776" height="31" class="row-b"/>
+      <text x="122" y="531" class="column">catalog_year</text><text x="435" y="531" class="type">TEXT</text>
+      <rect x="102" y="540" width="776" height="31" class="row-a"/>
+      <text x="122" y="562" class="column">fetched_at</text><text x="435" y="562" class="type">TIMESTAMP</text>
+      <rect x="102" y="571" width="776" height="31" class="row-b"/>
+      <text x="122" y="593" class="column">source_host</text><text x="435" y="593" class="type">VARCHAR</text>
+      <rect x="102" y="602" width="776" height="31" class="row-a"/>
+      <text x="122" y="624" class="column">prereq_tree</text><text x="435" y="624" class="type">JSONB</text><text x="723" y="624" class="badge">GIN IDX</text>
+      <rect x="102" y="633" width="776" height="31" class="row-b"/>
+      <text x="122" y="655" class="column">coreq_tree</text><text x="435" y="655" class="type">JSONB</text><text x="723" y="655" class="badge">GIN IDX</text>
+      <rect x="102" y="664" width="776" height="31" class="row-a"/>
+      <text x="122" y="686" class="column">requirements_parsed</text><text x="435" y="686" class="type">BOOLEAN</text><text x="723" y="686" class="badge">NN</text>
+    </g>
+  </g>
+
+  <!-- catalog.syllabi -->
+  <g>
+    <rect x="100" y="790" width="780" height="650" rx="12" class="card"/>
+    <path d="M112,790 h756 a12,12 0 0 1 12,12 v42 h-780 v-42 a12,12 0 0 1 12,-12 z" class="catalog-header"/>
+    <text x="125" y="827" class="table-title">syllabi</text>
+    <text x="665" y="824" class="small" fill="#ffffff">19 columns</text>
+    <g>
+      <rect x="102" y="844" width="776" height="31" class="row-a"/>
+      <text x="122" y="866" class="column">syllabus_id</text><text x="435" y="866" class="type">UUID</text><text x="723" y="866" class="badge">PK, NN</text>
+      <rect x="102" y="875" width="776" height="31" class="row-b"/>
+      <text x="122" y="897" class="column">course_code</text><text x="435" y="897" class="type">VARCHAR</text><text x="723" y="897" class="badge">NN, IDX</text>
+      <rect x="102" y="906" width="776" height="31" class="row-a"/>
+      <text x="122" y="928" class="column">course_name</text><text x="435" y="928" class="type">VARCHAR</text><text x="723" y="928" class="badge">NN</text>
+      <rect x="102" y="937" width="776" height="31" class="row-b"/>
+      <text x="122" y="959" class="column">section</text><text x="435" y="959" class="type">VARCHAR</text><text x="723" y="959" class="badge">NN</text>
+      <rect x="102" y="968" width="776" height="31" class="row-a"/>
+      <text x="122" y="990" class="column">semester</text><text x="435" y="990" class="type">VARCHAR</text><text x="723" y="990" class="badge">NN</text>
+      <rect x="102" y="999" width="776" height="31" class="row-b"/>
+      <text x="122" y="1021" class="column">semester_code</text><text x="435" y="1021" class="type">VARCHAR</text><text x="723" y="1021" class="badge">NN, IDX</text>
+      <rect x="102" y="1030" width="776" height="31" class="row-a"/>
+      <text x="122" y="1052" class="column">instructor_name</text><text x="435" y="1052" class="type">VARCHAR</text>
+      <rect x="102" y="1061" width="776" height="31" class="row-b"/>
+      <text x="122" y="1083" class="column">instructor_plid</text><text x="435" y="1083" class="type">VARCHAR</text>
+      <rect x="102" y="1092" width="776" height="31" class="row-a"/>
+      <text x="122" y="1114" class="column">source_url</text><text x="435" y="1114" class="type">VARCHAR</text><text x="723" y="1114" class="badge">UQ, NN</text>
+      <rect x="102" y="1123" width="776" height="31" class="row-b"/>
+      <text x="122" y="1145" class="column">has_syllabus</text><text x="435" y="1145" class="type">BOOLEAN</text><text x="723" y="1145" class="badge">NN</text>
+      <rect x="102" y="1154" width="776" height="31" class="row-a"/>
+      <text x="122" y="1176" class="column">original_format</text><text x="435" y="1176" class="type">VARCHAR</text>
+      <rect x="102" y="1185" width="776" height="31" class="row-b"/>
+      <text x="122" y="1207" class="column">syllabus_filename</text><text x="435" y="1207" class="type">VARCHAR</text>
+      <rect x="102" y="1216" width="776" height="31" class="row-a"/>
+      <text x="122" y="1238" class="column">credit_hours</text><text x="435" y="1238" class="type">INTEGER</text>
+      <rect x="102" y="1247" width="776" height="31" class="row-b"/>
+      <text x="122" y="1269" class="column">index_num</text><text x="435" y="1269" class="type">BIGINT</text><text x="723" y="1269" class="badge">NN</text>
+      <rect x="102" y="1278" width="776" height="31" class="row-a"/>
+      <text x="122" y="1300" class="column">created_at</text><text x="435" y="1300" class="type">TIMESTAMP</text><text x="723" y="1300" class="badge">NN</text>
+      <rect x="102" y="1309" width="776" height="31" class="row-b"/>
+      <text x="122" y="1331" class="column">updated_at</text><text x="435" y="1331" class="type">TIMESTAMP</text><text x="723" y="1331" class="badge">NN</text>
+      <rect x="102" y="1340" width="776" height="31" class="row-a"/>
+      <text x="122" y="1362" class="column">fetched_at</text><text x="435" y="1362" class="type">TIMESTAMP</text><text x="723" y="1362" class="badge">NN</text>
+      <rect x="102" y="1371" width="776" height="31" class="row-b"/>
+      <text x="122" y="1393" class="column">catalog_year</text><text x="435" y="1393" class="type">VARCHAR</text>
+      <rect x="102" y="1402" width="776" height="31" class="row-a"/>
+      <text x="122" y="1424" class="column">source_host</text><text x="435" y="1424" class="type">VARCHAR</text><text x="723" y="1424" class="badge">NN</text>
+    </g>
+  </g>
+
+  <!-- catalog.syllabus_documents -->
+  <g>
+    <rect x="970" y="300" width="790" height="736" rx="12" class="card"/>
+    <path d="M982,300 h766 a12,12 0 0 1 12,12 v42 h-790 v-42 a12,12 0 0 1 12,-12 z" class="catalog-header"/>
+    <text x="995" y="337" class="table-title">syllabus_documents</text>
+    <text x="1530" y="334" class="small" fill="#ffffff">21 columns</text>
+    <g>
+      <rect x="972" y="354" width="786" height="31" class="row-a"/>
+      <text x="992" y="376" class="column">document_id</text><text x="1310" y="376" class="type">UUID</text><text x="1615" y="376" class="badge">PK, NN</text>
+      <rect x="972" y="385" width="786" height="31" class="row-b"/>
+      <text x="992" y="407" class="column">syllabus_id</text><text x="1310" y="407" class="type">UUID</text><text x="1615" y="407" class="badge">FK, UQ, NN</text>
+      <rect x="972" y="416" width="786" height="31" class="row-a"/>
+      <text x="992" y="438" class="column">source_url</text><text x="1310" y="438" class="type">TEXT</text><text x="1615" y="438" class="badge">NN, IDX</text>
+      <rect x="972" y="447" width="786" height="31" class="row-b"/>
+      <text x="992" y="469" class="column">file_path</text><text x="1310" y="469" class="type">TEXT</text>
+      <rect x="972" y="478" width="786" height="31" class="row-a"/>
+      <text x="992" y="500" class="column">content_type</text><text x="1310" y="500" class="type">VARCHAR(100)</text>
+      <rect x="972" y="509" width="786" height="31" class="row-b"/>
+      <text x="992" y="531" class="column">original_filename</text><text x="1310" y="531" class="type">VARCHAR(255)</text>
+      <rect x="972" y="540" width="786" height="31" class="row-a"/>
+      <text x="992" y="562" class="column">content_hash</text><text x="1310" y="562" class="type">VARCHAR(64)</text><text x="1615" y="562" class="badge">IDX</text>
+      <rect x="972" y="571" width="786" height="31" class="row-b"/>
+      <text x="992" y="593" class="column">file_size</text><text x="1310" y="593" class="type">BIGINT</text>
+      <rect x="972" y="602" width="786" height="31" class="row-a"/>
+      <text x="992" y="624" class="column">download_status</text><text x="1310" y="624" class="type">VARCHAR(50)</text><text x="1615" y="624" class="badge">NN</text>
+      <rect x="972" y="633" width="786" height="31" class="row-b"/>
+      <text x="992" y="655" class="column">extraction_status</text><text x="1310" y="655" class="type">VARCHAR(50)</text><text x="1615" y="655" class="badge">NN</text>
+      <rect x="972" y="664" width="786" height="31" class="row-a"/>
+      <text x="992" y="686" class="column">extracted_text</text><text x="1310" y="686" class="type">TEXT</text>
+      <rect x="972" y="695" width="786" height="31" class="row-b"/>
+      <text x="992" y="717" class="column">page_count</text><text x="1310" y="717" class="type">INTEGER</text>
+      <rect x="972" y="726" width="786" height="31" class="row-a"/>
+      <text x="992" y="748" class="column">character_count</text><text x="1310" y="748" class="type">INTEGER</text>
+      <rect x="972" y="757" width="786" height="31" class="row-b"/>
+      <text x="992" y="779" class="column">error_message</text><text x="1310" y="779" class="type">TEXT</text>
+      <rect x="972" y="788" width="786" height="31" class="row-a"/>
+      <text x="992" y="810" class="column">manual_review_required</text><text x="1310" y="810" class="type">BOOLEAN</text><text x="1615" y="810" class="badge">NN, PARTIAL IDX</text>
+      <rect x="972" y="819" width="786" height="31" class="row-b"/>
+      <text x="992" y="841" class="column">manual_review_reason</text><text x="1310" y="841" class="type">TEXT</text>
+      <rect x="972" y="850" width="786" height="31" class="row-a"/>
+      <text x="992" y="872" class="column">manual_review_notes</text><text x="1310" y="872" class="type">TEXT</text>
+      <rect x="972" y="881" width="786" height="31" class="row-b"/>
+      <text x="992" y="903" class="column">downloaded_at</text><text x="1310" y="903" class="type">TIMESTAMP WITH TIME ZONE</text>
+      <rect x="972" y="912" width="786" height="31" class="row-a"/>
+      <text x="992" y="934" class="column">extracted_at</text><text x="1310" y="934" class="type">TIMESTAMP WITH TIME ZONE</text>
+      <rect x="972" y="943" width="786" height="31" class="row-b"/>
+      <text x="992" y="965" class="column">created_at</text><text x="1310" y="965" class="type">TIMESTAMP WITH TIME ZONE</text>
+      <rect x="972" y="974" width="786" height="31" class="row-a"/>
+      <text x="992" y="996" class="column">updated_at</text><text x="1310" y="996" class="type">TIMESTAMP WITH TIME ZONE</text>
+    </g>
+  </g>
+
+  <!-- catalog.syllabus_observations -->
+  <g>
+    <rect x="970" y="1100" width="790" height="426" rx="12" class="card"/>
+    <path d="M982,1100 h766 a12,12 0 0 1 12,12 v42 h-790 v-42 a12,12 0 0 1 12,-12 z" class="catalog-header"/>
+    <text x="995" y="1137" class="table-title">syllabus_observations</text>
+    <text x="1530" y="1134" class="small" fill="#ffffff">12 columns</text>
+    <g>
+      <rect x="972" y="1154" width="786" height="31" class="row-a"/>
+      <text x="992" y="1176" class="column">observation_id</text><text x="1310" y="1176" class="type">UUID</text><text x="1615" y="1176" class="badge">PK, NN</text>
+      <rect x="972" y="1185" width="786" height="31" class="row-b"/>
+      <text x="992" y="1207" class="column">document_id</text><text x="1310" y="1207" class="type">UUID</text><text x="1615" y="1207" class="badge">FK, NN, IDX</text>
+      <rect x="972" y="1216" width="786" height="31" class="row-a"/>
+      <text x="992" y="1238" class="column">syllabus_id</text><text x="1310" y="1238" class="type">UUID</text><text x="1615" y="1238" class="badge">FK, NN, IDX</text>
+      <rect x="972" y="1247" width="786" height="31" class="row-b"/>
+      <text x="992" y="1269" class="column">course_code</text><text x="1310" y="1269" class="type">VARCHAR</text><text x="1615" y="1269" class="badge">NN, IDX</text>
+      <rect x="972" y="1278" width="786" height="31" class="row-a"/>
+      <text x="992" y="1300" class="column">semester_code</text><text x="1310" y="1300" class="type">VARCHAR</text><text x="1615" y="1300" class="badge">NN</text>
+      <rect x="972" y="1309" width="786" height="31" class="row-b"/>
+      <text x="992" y="1331" class="column">category</text><text x="1310" y="1331" class="type">VARCHAR(100)</text><text x="1615" y="1331" class="badge">NN, IDX</text>
+      <rect x="972" y="1340" width="786" height="31" class="row-a"/>
+      <text x="992" y="1362" class="column">observation_key</text><text x="1310" y="1362" class="type">VARCHAR(100)</text><text x="1615" y="1362" class="badge">NN</text>
+      <rect x="972" y="1371" width="786" height="31" class="row-b"/>
+      <text x="992" y="1393" class="column">observation_value</text><text x="1310" y="1393" class="type">TEXT</text><text x="1615" y="1393" class="badge">NN</text>
+      <rect x="972" y="1402" width="786" height="31" class="row-a"/>
+      <text x="992" y="1424" class="column">context_snippet</text><text x="1310" y="1424" class="type">TEXT</text>
+      <rect x="972" y="1433" width="786" height="31" class="row-b"/>
+      <text x="992" y="1455" class="column">confidence</text><text x="1310" y="1455" class="type">NUMERIC(3,2)</text>
+      <rect x="972" y="1464" width="786" height="31" class="row-a"/>
+      <text x="992" y="1486" class="column">provenance</text><text x="1310" y="1486" class="type">JSONB</text><text x="1615" y="1486" class="badge">GIN IDX</text>
+      <rect x="972" y="1495" width="786" height="31" class="row-b"/>
+      <text x="992" y="1517" class="column">created_at</text><text x="1310" y="1517" class="type">TIMESTAMP WITH TIME ZONE</text><text x="1615" y="1517" class="badge">NN</text>
+    </g>
+  </g>
+
+  <!-- resources.summaries -->
+  <g>
+    <rect x="1900" y="320" width="760" height="208" rx="12" class="card"/>
+    <path d="M1912,320 h736 a12,12 0 0 1 12,12 v42 h-760 v-42 a12,12 0 0 1 12,-12 z" class="resources-header"/>
+    <text x="1925" y="357" class="table-title">summaries</text>
+    <text x="2500" y="354" class="small" fill="#ffffff">4 columns</text>
+    <rect x="1902" y="374" width="756" height="31" class="row-a"/>
+    <text x="1922" y="396" class="column">summary_id</text><text x="2225" y="396" class="type">UUID</text><text x="2530" y="396" class="badge">PK, NN</text>
+    <rect x="1902" y="405" width="756" height="31" class="row-b"/>
+    <text x="1922" y="427" class="column">course_code</text><text x="2225" y="427" class="type">VARCHAR</text><text x="2530" y="427" class="badge">UQ, NN</text>
+    <rect x="1902" y="436" width="756" height="31" class="row-a"/>
+    <text x="1922" y="458" class="column">content</text><text x="2225" y="458" class="type">TEXT</text>
+    <rect x="1902" y="467" width="756" height="31" class="row-b"/>
+    <text x="1922" y="489" class="column">created_at</text><text x="2225" y="489" class="type">TIMESTAMP</text><text x="2530" y="489" class="badge">NN</text>
+  </g>
+
+  <!-- resources.links -->
+  <g>
+    <rect x="1900" y="710" width="760" height="238" rx="12" class="card"/>
+    <path d="M1912,710 h736 a12,12 0 0 1 12,12 v42 h-760 v-42 a12,12 0 0 1 12,-12 z" class="resources-header"/>
+    <text x="1925" y="747" class="table-title">links</text>
+    <text x="2500" y="744" class="small" fill="#ffffff">5 columns</text>
+    <rect x="1902" y="764" width="756" height="31" class="row-a"/>
+    <text x="1922" y="786" class="column">link_id</text><text x="2225" y="786" class="type">UUID</text><text x="2530" y="786" class="badge">PK, NN</text>
+    <rect x="1902" y="795" width="756" height="31" class="row-b"/>
+    <text x="1922" y="817" class="column">summary_id</text><text x="2225" y="817" class="type">UUID</text><text x="2530" y="817" class="badge">FK, NN</text>
+    <rect x="1902" y="826" width="756" height="31" class="row-a"/>
+    <text x="1922" y="848" class="column">url</text><text x="2225" y="848" class="type">TEXT</text><text x="2530" y="848" class="badge">NN</text>
+    <rect x="1902" y="857" width="756" height="31" class="row-b"/>
+    <text x="1922" y="879" class="column">title</text><text x="2225" y="879" class="type">TEXT</text>
+    <rect x="1902" y="888" width="756" height="31" class="row-a"/>
+    <text x="1922" y="910" class="column">category</text><text x="2225" y="910" class="type">TEXT</text>
+  </g>
+
+  <!-- Relationships: arrow points toward the referenced key. -->
+  <path d="M490,702 L490,790" class="logical"/>
+  <rect x="510" y="716" width="410" height="48" rx="8" fill="#fff8eb" stroke="#d8a45d"/>
+  <text x="526" y="746" class="relation" fill="#8a4b08">course_code match only — NO FK</text>
+
+  <path d="M970,400 L925,400 L925,1060 L880,1060" class="fk"/>
+  <rect x="885" y="785" width="78" height="54" rx="8" fill="#ffffff" stroke="#8998a7"/>
+  <text x="898" y="808" class="relation">FK</text>
+  <text x="891" y="829" class="small">syllabus_id</text>
+
+  <path d="M1365,1100 L1365,1036" class="fk"/>
+  <rect x="1380" y="1040" width="260" height="52" rx="8" fill="#ffffff" stroke="#8998a7"/>
+  <text x="1391" y="1062" class="relation">document_id FK → documents</text>
+  <text x="1391" y="1082" class="small">observations reference document</text>
+
+  <path d="M970,1240 L880,1240" class="fk"/>
+  <rect x="884" y="1178" width="80" height="54" rx="8" fill="#ffffff" stroke="#8998a7"/>
+  <text x="898" y="1201" class="relation">FK</text>
+  <text x="891" y="1222" class="small">syllabus_id</text>
+
+  <path d="M2280,710 L2280,528" class="fk"/>
+  <rect x="2293" y="592" width="221" height="62" rx="8" fill="#ffffff" stroke="#8998a7"/>
+  <text x="2304" y="617" class="relation">summary_id FK</text>
+  <text x="2304" y="639" class="small">links → summaries</text>
+
+  <path d="M880,360 L915,260 L2230,260 L2230,320" class="logical"/>
+  <rect x="1410" y="236" width="390" height="48" rx="8" fill="#fff8eb" stroke="#d8a45d"/>
+  <text x="1426" y="266" class="relation" fill="#8a4b08">course_code match only — NO FK</text>
+
+  <!-- Notes and indexes -->
+  <rect x="85" y="1640" width="1715" height="205" rx="12" fill="#ffffff" stroke="#c0ccd7" stroke-width="2"/>
+  <text x="110" y="1682" class="schema-title">Indexes and relationship notes</text>
+  <text x="110" y="1718" class="note">courses: uq_courses_code_year; idx_courses_code_year; GIN indexes on prereq_tree and coreq_tree.</text>
+  <text x="110" y="1750" class="note">syllabi: UNIQUE(source_url); indexes on course_code, semester_code, and (course_code, semester_code).</text>
+  <text x="110" y="1782" class="note">syllabus_documents: UNIQUE(syllabus_id); indexes on syllabus_id, content_hash, source_url, and partial manual_review_required.</text>
+  <text x="110" y="1814" class="note">syllabus_observations: indexes on course_code, syllabus_id, document_id, category, and GIN(provenance).</text>
+  <text x="110" y="1838" class="small">Matching course_code values do not create an FK: syllabi, observations, and summaries can be joined by code by convention.</text>
+
+  <rect x="1890" y="1020" width="775" height="392" rx="12" fill="#ffffff" stroke="#b8d3c7" stroke-width="2"/>
+  <text x="1920" y="1065" class="schema-title">How to read this diagram</text>
+  <text x="1920" y="1110" class="note">• Solid arrows point from a referencing FK</text>
+  <text x="1945" y="1138" class="note">to the referenced primary key.</text>
+  <text x="1920" y="1182" class="note">• `syllabus_documents.syllabus_id` is unique:</text>
+  <text x="1945" y="1210" class="note">at most one document row per syllabus.</text>
+  <text x="1920" y="1254" class="note">• `links.summary_id` has no ON DELETE CASCADE</text>
+  <text x="1945" y="1282" class="note">clause; document and observation FKs do.</text>
+  <text x="1920" y="1326" class="note">• Requirements use JSONB; `NULL` trees plus</text>
+  <text x="1945" y="1354" class="note">requirements_parsed = false means unknown.</text>
+  <text x="1920" y="1386" class="small">Migration source: init-db/01-init.sql through 06-syllabus-documents-and-observations.sql.</text>
+
+  <text x="72" y="1948" class="small">Reference snapshot of the migration-defined schema (not introspected from a running database). Check/apply migrations if a local database differs.</text>
+</svg>

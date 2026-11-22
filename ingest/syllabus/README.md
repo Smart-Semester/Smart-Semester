@@ -9,8 +9,9 @@ This pipeline covers:
 - Available semesters and class sections per course
 - Instructor metadata (resolved by PLID)
 - Syllabus listing metadata — including sections where `has_syllabus=False`
+- **PDF Download & Text Extraction (Phase 8)**: Optional downloading of syllabus PDFs with integrity/size checks, text extraction via `pypdf`, structured observation extraction with source provenance, and an explicit manual-review queue for unextractable/scanned documents.
 
-It does **not** download syllabus PDFs or extract syllabus text. PDF download and text extraction are a later phase (see checklist section 6).
+By default, metadata ingest does not download PDFs unless the `--download-syllabi` flag is provided. Dry-run preview is the default; `--apply` is required for database writes.
 
 ## How It Works
 
@@ -25,6 +26,12 @@ getcoursesfordepartment.py?department=CS
               └── For each instructor:
                   getinstructordetails.py?plid=x9028bf7ba7de
 ```
+
+When `--download-syllabi` is passed, the pipeline additionally:
+1. Downloads syllabus PDFs via `downloader.py` (streaming with SHA-256 integrity and 10 MB limit enforcement).
+2. Extracts text via `extractor.py` using `pypdf`, detecting scanned/image-only or malformed documents.
+3. Routes failures to an explicit manual review queue in `catalog.syllabus_documents`.
+4. Extracts structured observations (grading breakdown, textbooks, topics, workload, policies) via `observations.py` with source-document provenance into `catalog.syllabus_observations`.
 
 Each class section produces one `SyllabusRecord` with:
 - Course code and name
@@ -45,7 +52,10 @@ Sections where `has_syllabus=False` are **valid records** and are stored in the 
 | 1. Fetch | `fetcher.py` | Talks to the HB 2504 API with rate limiting (0.25s between requests) |
 | 2. Parse | `parser.py` | Converts raw API JSON into `SyllabusRecord` dataclasses |
 | 3. Validate | `validator.py` | Checks required fields, format (course code, semester code, URL), and duplicates |
-| 4. Load | `loader.py` | Upserts to Postgres via `INSERT ... ON CONFLICT` in a transaction |
+| 4. Download (optional) | `downloader.py` | Streams syllabus PDFs with SHA-256 integrity, Content-Type check, and 10 MB limit |
+| 5. Extract (optional) | `extractor.py` | Extracts text with `pypdf`, detecting scanned and malformed PDFs |
+| 6. Observe (optional) | `observations.py` | Extracts structured observations with snippet provenance |
+| 7. Load | `loader.py` | Upserts syllabi, documents, and observations in transactions |
 
 ## Quick Start
 
@@ -53,23 +63,17 @@ Sections where `has_syllabus=False` are **valid records** and are stored in the 
 
 ```bash
 cd /path/to/Smart-Semester
-python -m pytest ingest/syllabus/tests/test_syllabus_ingest.py -v
+python -m pytest ingest/syllabus/tests/ -v
 ```
 
 ### Dry-Run Preview (hits the live API, does NOT write to database)
 
 ```bash
-# Preview all courses and semesters
-python -m ingest.syllabus.cli
+# Preview CS courses and class sections
+python -m ingest.syllabus.cli --max-semesters 1
 
-# Preview with only the 2 most recent semesters per course (faster)
-python -m ingest.syllabus.cli --max-semesters 2
-
-# Verbose output
-python -m ingest.syllabus.cli --max-semesters 1 -v
-
-# Probe each syllabus URL for content-type and filename
-python -m ingest.syllabus.cli --max-semesters 1 --probe-syllabi
+# Preview including PDF download, text extraction, and observation extraction
+python -m ingest.syllabus.cli --max-semesters 1 --download-syllabi
 ```
 
 ### Apply to Database
@@ -78,18 +82,20 @@ python -m ingest.syllabus.cli --max-semesters 1 --probe-syllabi
 # 1. Make sure Postgres is running
 docker compose up -d db
 
-# 2. Apply all migrations (fresh volume: auto-applied; existing volume: run manually)
-for f in init-db/*.sql; do
-  docker exec -i smart_semester_db psql -U postgres -d smart_semester < "$f"
-done
+# 2. Apply all migrations (01 through 06)
+python init-db/migrate.py postgresql://postgres:postgrespassword@localhost:5432/smart_semester
 
-# 3. Run the importer with --apply
+# 3. Run metadata ingestion with --apply
 DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \
     python -m ingest.syllabus.cli --apply --catalog-year 2024-2025
 
-# 4. (Strict mode) Abort if any fetch errors occur instead of partial ingest
+# 4. Ingest metadata AND download/extract syllabus PDFs + observations
 DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \
-    python -m ingest.syllabus.cli --apply --fail-on-fetch-errors
+    python -m ingest.syllabus.cli --apply --download-syllabi --catalog-year 2024-2025
+
+# 5. Inspect manual review queue for scanned or malformed documents
+DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semester" \
+    python -m ingest.syllabus.cli --list-manual-review
 ```
 
 ## CLI Flags
@@ -100,6 +106,15 @@ DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/smart_semest
 | `--catalog-year YEAR` | None | Tag all rows with a catalog year, e.g. `2024-2025` |
 | `--max-semesters N` | all | Limit semesters per course (useful for testing) |
 | `--probe-syllabi` | off | HEAD each syllabus URL to discover content-type and filename |
+| `--download-syllabi` | off | Download PDFs, extract text, and extract observations |
+| `--storage-dir DIR` | `data/syllabi` | Filesystem directory to retain downloaded PDFs |
+| `--no-retain-pdf` | off | Discard PDF files on disk after text extraction |
+| `--max-pdf-size BYTES`| 10485760 (10 MB)| Maximum allowed size for a single syllabus PDF |
+| `--reprocess` | off | Force re-download and re-extraction even if content hash unchanged |
+| `--list-manual-review`| off | List documents flagged for manual review |
+| `--resolve-manual-review ID` | None | Resolve a document in manual review by document UUID |
+| `--manual-notes NOTES`| None | Explanation notes for manual review resolution |
+| `--manual-text-file FILE` | None | Text file with transcribed syllabus text |
 | `--fail-on-fetch-errors` | off | Abort before writes if any upstream fetch errors occur |
 | `--verbose` / `-v` | off | Enable debug logging |
 
@@ -113,10 +128,12 @@ To require a clean run (no errors allowed), use `--fail-on-fetch-errors`. The pi
 
 - **Default is dry-run**: No `--apply` flag = no database writes
 - **`DATABASE_URL` required**: Never hardcoded; must be set as an environment variable
-- **Transactional writes**: The entire batch is written in a single transaction
-- **Upsert on `source_url`**: Re-running the importer updates existing records, never creates duplicates
+- **Transactional writes**: Writes occur within database transactions
+- **Upsert on uniqueness keys**: Re-running the importer updates existing records, never creates duplicates
 - **Never truncates**: Existing data is preserved
 - **Validation before writing**: All records are validated; errors are reported before any writes
+- **Separation of observations**: Syllabus-extracted findings are stored in `catalog.syllabus_observations` and never overwrite official `catalog.courses` descriptions or requirements
+- **Explicit manual review**: Scanned and malformed documents are routed to a manual review queue instead of silently becoming empty strings
 
 ## Database Migration
 
@@ -129,8 +146,9 @@ Versioned migrations in `init-db/` are the authoritative schema source. See [`in
 | `03-traceability.sql` | `fetched_at`, `catalog_year`, `source_host` columns |
 | `04-req-tree.sql` | `prereq_tree`, `coreq_tree` JSONB + `requirements_parsed` |
 | `05-uniqueness-and-fk.sql` | `UNIQUE(course_code, catalog_year)` + composite lookup index |
+| `06-syllabus-documents-and-observations.sql` | `catalog.syllabus_documents` & `catalog.syllabus_observations` |
 
-> **Important:** Docker's `init-db/` scripts only run when a database volume is first created. For existing volumes, apply migrations manually (all use `IF NOT EXISTS` so they're safe to re-run).
+> **Important:** Docker's `init-db/` scripts only run when a database volume is first created. For existing volumes, apply migrations with `python init-db/migrate.py`.
 
 ## Semester Code Encoding
 
@@ -146,9 +164,9 @@ The API uses `YYYYMM` codes mapped as follows (ported from the site's JavaScript
 
 Example: `202510` → Fall 2024 (year 2025 decremented for month 10).
 
-## Limitations
+## Limitations & Best Practices
 
-- **Syllabus text extraction is not implemented.** Syllabi are served as PDFs. The pipeline captures the download URL and metadata; text extraction is a later phase.
+- **Scanned Syllabi**: Syllabi uploaded as scanned images have no text layer. These are flagged as `SCANNED_NEEDS_OCR` and routed to `--list-manual-review` rather than silently treated as empty text.
 - **Instructor names require an extra API call per unique instructor.** The pipeline caches these to minimize requests.
 - **The `--probe-syllabi` flag** sends a HEAD request per `has_syllabus=True` record and is slow for large batches. It is best-effort — a probe failure does not invalidate the record.
 - **robots.txt**: The HB 2504 site returns 404 for `/robots.txt` (no restrictions). The pipeline uses a descriptive User-Agent and rate limiting regardless.

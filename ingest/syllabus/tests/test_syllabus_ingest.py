@@ -792,3 +792,156 @@ class TestCLIFlags:
                 catalog_year=None,
             )
         assert exit_code == 0
+
+
+# ── Additional offline fixture tests for Section 7 ─────────────────────
+
+class TestParserCustomApiBase:
+    """Parser uses the api_base argument to build syllabus URLs."""
+
+    def test_custom_api_base_in_source_url(self, classes_data, instructor_cache):
+        custom_base = "https://staging.example.com/py"
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+            api_base=custom_base,
+        )
+        for rec in records:
+            assert rec.source_url.startswith(custom_base), (
+                f"Expected URL to start with custom api_base, got: {rec.source_url}"
+            )
+
+    def test_default_api_base_in_source_url(self, classes_data, instructor_cache):
+        """Default api_base results in production HB 2504 URLs."""
+        records = parse_classes_into_records(
+            course_code="CS1428",
+            course_name="FOUNDATIONS OF COMPUTER SCI I",
+            credit_hours=4,
+            semester_code="202510",
+            classes=classes_data["classes"],
+            instructor_cache=instructor_cache,
+        )
+        for rec in records:
+            assert "api.hb2504.txst.edu" in rec.source_url
+
+
+class TestFetcherOfflineHighLevel:
+    """Offline tests for HB2504Fetcher high-level methods using fixture data."""
+
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_fetch_cs_courses_returns_list(self, mock_urlopen):
+        """fetch_cs_courses parses the fixture 'courses' key correctly."""
+        import json, pathlib
+        fixture_path = pathlib.Path(__file__).parent / "fixtures" / "cs_courses.json"
+        payload = json.loads(fixture_path.read_text())
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+        mock_urlopen.return_value = mock_resp
+
+        fetcher = _make_fetcher()
+        courses = fetcher.fetch_cs_courses()
+        assert isinstance(courses, list)
+        assert len(courses) > 0
+        assert all(c["number"].startswith("CS") for c in courses)
+
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_fetch_course_details_returns_dict(self, mock_urlopen):
+        """fetch_course_details parses the fixture correctly."""
+        import json, pathlib
+        fixture_path = pathlib.Path(__file__).parent / "fixtures" / "course_details_CS1428.json"
+        payload = json.loads(fixture_path.read_text())
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+        mock_urlopen.return_value = mock_resp
+
+        fetcher = _make_fetcher()
+        details = fetcher.fetch_course_details("CS1428")
+        assert "credit_hours" in details or "semesters" in details
+
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_fetch_classes_returns_list(self, mock_urlopen):
+        """fetch_classes parses the classes array correctly."""
+        import json, pathlib
+        fixture_path = pathlib.Path(__file__).parent / "fixtures" / "classes_CS1428_202510.json"
+        payload = json.loads(fixture_path.read_text())
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+        mock_urlopen.return_value = mock_resp
+
+        fetcher = _make_fetcher()
+        classes = fetcher.fetch_classes("CS1428", "202510")
+        assert isinstance(classes, list)
+        assert len(classes) > 0
+
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_fetch_classes_missing_key_returns_empty(self, mock_urlopen):
+        """fetch_classes returns [] when the response omits the 'classes' key."""
+        import json
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps({}).encode()
+        mock_urlopen.return_value = mock_resp
+
+        fetcher = _make_fetcher()
+        classes = fetcher.fetch_classes("CS1428", "202510")
+        assert classes == []
+
+
+class TestFetcherNetworkErrors:
+    """Additional fetch-error scenarios not covered by TestFetcherRetry."""
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_url_error_retried(self, mock_urlopen, mock_sleep):
+        """urllib.error.URLError (non-HTTP) is retried like an OSError."""
+        import json
+        payload = {"courses": []}
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = json.dumps(payload).encode()
+
+        mock_urlopen.side_effect = [
+            urllib.error.URLError("connection refused"),
+            mock_resp,
+        ]
+
+        fetcher = _make_fetcher()
+        result = fetcher._get_json("getcoursesfordepartment.py")
+        assert result == payload
+        assert mock_urlopen.call_count == 2
+
+    @patch("ingest.syllabus.fetcher.time.sleep")
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_all_retries_on_network_error_raises(self, mock_urlopen, mock_sleep):
+        """Persistent network errors exhaust retries and re-raise the last error."""
+        mock_urlopen.side_effect = OSError("unreachable")
+        fetcher = _make_fetcher(max_retries=1)
+
+        with pytest.raises(OSError, match="unreachable"):
+            fetcher._get_json("getcoursesfordepartment.py")
+
+        # 1 initial + 1 retry = 2 total
+        assert mock_urlopen.call_count == 2
+
+    @patch("ingest.syllabus.fetcher.urllib.request.urlopen")
+    def test_500_raises_http_error(self, mock_urlopen):
+        """A non-429/5xx that exhausts retries re-raises the HTTPError."""
+        fetcher = _make_fetcher(max_retries=0)
+        mock_urlopen.side_effect = _make_http_error(500)
+
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            fetcher._get_json("getcoursesfordepartment.py")
+
+        assert exc_info.value.code == 500

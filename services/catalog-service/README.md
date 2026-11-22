@@ -2,6 +2,9 @@
 
 The Catalog Service provides official course information (titles, descriptions, structured prerequisite and corequisite trees) to the Planner and other services via a REST API.
 
+For a practical integration walkthrough, see the
+[Catalog API consumer guide](../../docs/Catalog-Service-Consumer-Guide.md).
+
 ## API Contract
 
 Implements the contract defined in [`docs/Catalog-API-Contract.md`](../../docs/Catalog-API-Contract.md):
@@ -16,7 +19,7 @@ Implements the contract defined in [`docs/Catalog-API-Contract.md`](../../docs/C
 ## Requirements
 
 - Python 3.11+
-- PostgreSQL (running with migrations `01` through `05` applied)
+- PostgreSQL (running with migrations `01` through `06` applied)
 
 ## Local Development
 

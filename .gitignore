@@ -10,14 +10,27 @@ __pycache__/
 venv/
 
 # Secrets / env
-.env
-.env.local
+.env*
+!.env.example
+!.env.*.example
+!.env.template
+!.env.*.template
 *.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.ppk
+*.jks
+*.keystore
+*credential*.json
+*service-account*.json
+*serviceAccount*.json
 
 # OS / IDE
 .DS_Store
 .idea/
 .vscode/
 
-#docker
-docker-compose.yml
+# Data / Local storage
+data/

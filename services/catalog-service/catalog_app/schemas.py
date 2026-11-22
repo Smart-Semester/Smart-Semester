@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 from typing import List, Union, Literal, Annotated, Optional
 
@@ -69,6 +70,43 @@ AllOfNode.model_rebuild()
 AnyOfNode.model_rebuild()
 
 
+# ── Syllabus document (public, file_path intentionally omitted) ───────────────
+
+
+class SyllabusDocument(BaseModel):
+    """Public representation of one catalog.syllabus_documents row.
+
+    file_path is a server-local path and is deliberately not exposed.
+    All remaining columns from the joined syllabi + syllabus_documents tables
+    are included so callers have full provenance data.
+    """
+
+    # syllabus_documents columns
+    document_id: str
+    source_url: str
+    content_type: Optional[str] = None
+    original_filename: Optional[str] = None
+    content_hash: Optional[str] = None
+    file_size: Optional[int] = None
+    download_status: str
+    extraction_status: str
+    extracted_text: Optional[str] = None
+    page_count: Optional[int] = None
+    character_count: Optional[int] = None
+    manual_review_required: bool
+    manual_review_reason: Optional[str] = None
+    manual_review_notes: Optional[str] = None
+    downloaded_at: Optional[datetime] = None
+    extracted_at: Optional[datetime] = None
+
+    # denormalised from catalog.syllabi (via syllabus_id join)
+    semester: str
+    semester_code: str
+    section: str
+    instructor_name: Optional[str] = None
+    has_syllabus: bool
+
+
 # ── Catalog response (the external API shape) ─────────────────────────────────
 
 
@@ -83,6 +121,7 @@ class CatalogResponse(BaseModel):
     #   False → requirements have NOT been parsed yet (raw text may exist in DB)
     #   True  → requirements were parsed; null means the course genuinely has none
     # The planner must treat False as "requirements unknown", not "no requirements".
+    syllabus_documents: List[SyllabusDocument] = Field(default_factory=list)
 
 
 # ── Internal DB model (not exposed in the API) ────────────────────────────────
