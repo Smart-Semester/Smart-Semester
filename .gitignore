@@ -34,3 +34,6 @@ venv/
 
 # Data / Local storage
 data/
+
+#
+docker-compose.yml
